@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Linux C Code Generator (Gemini)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/languages/c.min.js"></script>
+    <style>
+        .chat-container {
+            height: calc(100vh - 160px);
+        }
+        .typing-indicator::after {
+            content: '...';
+            animation: typing 1.5s infinite;
+        }
+        @keyframes typing {
+            0% { content: '.'; }
+            33% { content: '..'; }
+            66% { content: '...'; }
+        }
+        .copy-btn {
+            position: absolute;
+            right: 8px;
+            top: 8px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-900">
+    <div class="container mx-auto max-w-4xl p-4">
+        <header class="bg-gray-800 text-green-400 p-4 rounded-t-lg border-b border-gray-700 flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-mono font-bold">Linux C Code Generator</h1>
+                <p class="text-green-300 text-sm font-mono">// Powered by Gemini API</p>
+            </div>
+            <button id="clear-chat" class="bg-gray-700 hover:bg-gray-600 text-green-300 px-3 py-1 rounded text-sm font-mono">
+                Clear Chat
+            </button>
+        </header>
+
+        <div class="bg-gray-800 shadow-md rounded-b-lg overflow-hidden border border-gray-700">
+            <div class="chat-container overflow-y-auto p-4 space-y-4 font-mono" id="chat-container">
+                <!-- Chat messages will appear here -->
+            </div>
+
+            <div class="p-4 border-t border-gray-700 bg-gray-800">
+                <div class="flex space-x-2">
+                    <input type="text" id="user-input" placeholder="Request C code (e.g., 'epoll server example')" 
+                           class="flex-1 p-3 bg-gray-700 text-green-200 border border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-green-500 font-mono text-sm"
+                           autocomplete="off">
+                    <button id="send-btn" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 focus:outline-none focus:ring-1 focus:ring-green-500 font-mono flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clip-rule="evenodd" />
+                        </svg>
+                        Run
+                    </button>
+                </div>
+                <div class="mt-2 flex items-center justify-between">
+                    <div>
+                        <input type="checkbox" id="auto-scroll" class="mr-2" checked>
+                        <label for="auto-scroll" class="text-xs text-gray-400 font-mono">auto-scroll</label>
+                    </div>
+                    <div class="text-xs text-gray-500 font-mono">
+                        Model: <span id="model-info" class="text-green-400">Gemini 1.5</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            // Initialize highlight.js
+            hljs.highlightAll();
+            
+            // API configuration
+            const API_KEY = 'AIzaSyAVZUoyt2g92abKvO6o4hKAMAG8-xH-LaE'; // Replace with your actual API key
+            const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+            
+            // Scroll to bottom of chat
+            function scrollToBottom() {
+                if ($('#auto-scroll').is(':checked')) {
+                    $('#chat-container').scrollTop($('#chat-container')[0].scrollHeight);
+                }
+            }
+            
+            // Add message to chat
+            function addMessage(role, content) {
+                let messageClass = role === 'user' ? 'user-message' : 'bot-message';
+                let alignClass = role === 'user' ? 'ml-auto bg-gray-700 text-blue-300' : 'mr-auto bg-gray-900 text-green-300';
+                
+                // Format code blocks
+                let formattedContent = content;
+                if (content.includes('```')) {
+                    formattedContent = content.replace(/```c([\s\S]*?)```/g, function(match, code) {
+                        return `<div class="relative"><pre class="mt-2"><code class="language-c">${code.trim()}</code></pre><button class="copy-btn bg-gray-700 text-green-300 text-xs px-2 py-1 rounded" onclick="navigator.clipboard.writeText(\`${code.trim()}\`)">Copy</button></div>`;
+                    });
+                }
+                
+                let messageHtml = `
+                    <div class="${messageClass} ${alignClass} p-3 rounded max-w-3/4 mb-2 border border-gray-700 text-sm">
+                        ${formattedContent}
+                    </div>
+                `;
+                
+                $('#chat-container').append(messageHtml);
+                scrollToBottom();
+                
+                // Re-run highlight.js for any new code blocks
+                $('pre code').each(function(i, block) {
+                    hljs.highlightElement(block);
+                });
+            }
+            
+            // Show typing indicator
+            function showTypingIndicator() {
+                let indicatorHtml = `
+                    <div class="bot-message mr-auto bg-gray-900 p-3 rounded max-w-3/4 mb-2 border border-gray-700 text-sm text-green-300">
+                        <div class="typing-indicator">compiling</div>
+                    </div>
+                `;
+                $('#chat-container').append(indicatorHtml);
+                scrollToBottom();
+                return $('#chat-container .bot-message').last();
+            }
+            
+            // Hide typing indicator
+            function hideTypingIndicator(indicator) {
+                indicator.remove();
+            }
+            
+            // Send message to Gemini API
+            async function sendToGemini(message) {
+                const typingIndicator = showTypingIndicator();
+                
+                try {
+                    const response = await $.ajax({
+                        url: `${API_URL}?key=${API_KEY}`,
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        data: JSON.stringify({
+                            contents: [{
+                                parts: [{
+                                    text: `You are a code generator that ONLY outputs C code for Linux systems. 
+Respond EXCLUSIVELY with code inside a markdown code block. 
+No explanations, no comments, just pure code. 
+If absolutely necessary, add maximum 2 lines of explanation before the code block. 
+Include all required headers and make sure the code compiles on Linux. 
+If the request is unclear, ask exactly one clarifying question.
+
+User request: ${message}`
+                                }]
+                            }],
+                            generationConfig: {
+                                temperature: 0.2,
+                                maxOutputTokens: 2000
+                            }
+                        })
+                    });
+                    
+                    hideTypingIndicator(typingIndicator);
+                    return response.candidates[0].content.parts[0].text;
+                } catch (error) {
+                    hideTypingIndicator(typingIndicator);
+                    console.error('Error calling Gemini API:', error);
+                    return "```c\n// Error: Could not generate code\n```";
+                }
+            }
+            
+            // Handle send button click
+            $('#send-btn').click(async function() {
+                const userInput = $('#user-input').val().trim();
+                if (userInput === '') return;
+                
+                $('#user-input').val('');
+                addMessage('user', userInput);
+                
+                const botResponse = await sendToGemini(userInput);
+                addMessage('assistant', botResponse);
+            });
+            
+            // Handle Enter key press
+            $('#user-input').keypress(function(e) {
+                if (e.which === 13) {
+                    $('#send-btn').click();
+                }
+            });
+            
+            // Clear chat history
+            $('#clear-chat').click(function() {
+                $('#chat-container').empty();
+            });
+            
+            // Add example prompts when clicking on empty chat
+            $('#chat-container').on('click', function(e) {
+                if ($(this).children().length === 0) {
+                    const examples = [
+                        "Multithreaded TCP server using pthreads",
+                        "File I/O with error handling",
+                        "Shared memory IPC example",
+                        "Epoll-based event loop",
+                        "Signal handler for SIGINT"
+                    ];
+                    
+                    let exampleHtml = '<div class="text-center text-gray-500 text-sm mb-4">Try these examples:</div>';
+                    exampleHtml += '<div class="grid grid-cols-1 gap-2">';
+                    examples.forEach(example => {
+                        exampleHtml += `<div class="example-prompt p-2 bg-gray-700 text-green-300 rounded cursor-pointer hover:bg-gray-600">${example}</div>`;
+                    });
+                    exampleHtml += '</div>';
+                    
+                    $(this).html(exampleHtml);
+                }
+            });
+            
+            // Handle example prompt clicks
+            $('#chat-container').on('click', '.example-prompt', function() {
+                $('#user-input').val($(this).text()).focus();
+            });
+        });
+    </script>
+</body>
+</html>
